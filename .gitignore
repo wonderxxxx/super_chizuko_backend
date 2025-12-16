@@ -1,0 +1,71 @@
+# 数据库文件
+data.db
+
+# 向量数据库目录
+/chroma_db
+
+# 模型文件目录（通常包含大文件）
+/models
+
+# IDE配置目录
+/.idea
+/.vscode
+
+# Python缓存
+/.pycache
+__pycache__/
+
+# Python虚拟环境
+venv/
+env/
+ENV/
+python_env/
+
+# 日志文件
+*.log
+logs/
+
+# 操作系统生成的文件
+.DS_Store
+Thumbs.db
+
+# 敏感配置文件
+.env
+.env.local
+.env.*.local
+
+# 测试覆盖率报告
+htmlcov/
+.coverage
+.coverage.*
+
+# 构建输出
+build/
+dist/
+*.egg-info/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# 大文件类型
+*.h5
+*.pth
+*.pt
+*.bin
+*.ckpt
+*.pkl
+*.npz
+*.tar.gz
+*.zip
+*.7z
+*.rar
+*.bz2
+*.csv
+*.jsonl
+*.parquet
+
+# 临时文件
+*.tmp
+*.temp
+.tmp/
+.temp/
