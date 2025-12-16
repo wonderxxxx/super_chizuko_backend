@@ -15,6 +15,16 @@ class Config:
     OLLAMA_MODEL = "deepseek-r1:8b"
     OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
     
+    # 硅基流动API配置
+    SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "")  # 环境变量获取API密钥
+    SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1/chat/completions"
+    SILICONFLOW_MODEL = "Qwen/QwQ-32B"  # 默认使用Qwen/QwQ-32B模型
+    SILICONFLOW_MAX_TOKENS = 4096
+    SILICONFLOW_TEMPERATURE = 0.7
+    SILICONFLOW_TOP_P = 0.7
+    SILICONFLOW_TOP_K = 50
+    SILICONFLOW_FREQUENCY_PENALTY = 0.5
+    
     # 记忆配置
     MEMORY_EXPIRY_TIME = 30 * 24 * 60 * 60  # 30天
     RELEVANT_MEMORIES_COUNT = 3  # 检索相关记忆数量

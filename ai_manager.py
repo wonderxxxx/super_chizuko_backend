@@ -8,6 +8,7 @@ import json
 from typing import Dict, List, Any
 import logging
 import time
+from siliconflow_client import SiliconFlowClient
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +24,18 @@ class AIManager:
         self._register_default_tools()
         # 创建线程池用于异步执行记忆总结
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        
+        # 初始化硅基流动客户端
+        self.siliconflow_client = None
+        try:
+            if Config.SILICONFLOW_API_KEY:
+                self.siliconflow_client = SiliconFlowClient()
+                logger.info("硅基流动API客户端初始化成功")
+            else:
+                logger.info("硅基流动API密钥未配置，将使用本地Ollama")
+        except Exception as e:
+            logger.error(f"硅基流动API客户端初始化失败: {e}")
+            self.siliconflow_client = None
     
     def _register_default_tools(self):
         """注册默认工具"""
@@ -96,11 +109,64 @@ class AIManager:
             # 降级方案：使用简单的关键词匹配
             return None
     
-    def get_ollama_response(self, prompt, think=False, raw=False):
-        """调用本地 Ollama 模型获取响应，可选返回原始结构与推理链"""
+    def get_ai_response(self, prompt, think=False, raw=False, use_siliconflow=None):
+        """
+        获取AI模型响应，支持选择使用硅基流动API或本地Ollama
+        
+        Args:
+            prompt: 输入提示
+            think: 是否返回推理过程
+            raw: 是否返回原始响应
+            use_siliconflow: 是否使用硅基流动API，None表示自动选择
+            
+        Returns:
+            包含响应和思考过程的字典
+        """
         start_time = time.time()
+        
+        # 决定使用哪种API
+        if use_siliconflow is None:
+            # 自动选择：优先使用硅基流动API
+            use_siliconflow = self.siliconflow_client is not None
+        
+        if use_siliconflow and self.siliconflow_client:
+            return self._get_siliconflow_response(prompt, think, raw, start_time)
+        else:
+            return self._get_ollama_response(prompt, think, raw, start_time)
+    
+    def _get_siliconflow_response(self, prompt, think, raw, start_time):
+        """使用硅基流动API获取响应"""
         try:
-            logger.info(f"开始调用 Ollama 模型 ({self.ollama_model})，think={think}, raw={raw}")
+            logger.info(f"开始调用硅基流动API ({Config.SILICONFLOW_MODEL})，think={think}, raw={raw}")
+            response = self.siliconflow_client.simple_chat(
+                prompt=prompt,
+                think=think,
+                raw=raw,
+                temperature=Config.SILICONFLOW_TEMPERATURE,
+                top_p=Config.SILICONFLOW_TOP_P,
+                frequency_penalty=Config.SILICONFLOW_FREQUENCY_PENALTY
+            )
+            
+            if raw:
+                end_time = time.time()
+                logger.info(f"硅基流动API调用完成，耗时: {end_time - start_time:.2f} 秒")
+                return response
+            
+            end_time = time.time()
+            logger.info(f"硅基流动API调用完成，响应长度: {len(response.get('response', ''))} 字符，耗时: {end_time - start_time:.2f} 秒")
+            return response
+            
+        except Exception as e:
+            end_time = time.time()
+            logger.error(f"硅基流动API调用失败: {e}，耗时: {end_time - start_time:.2f} 秒，回退到本地Ollama")
+            logger.debug(traceback.format_exc())
+            # 回退到本地Ollama
+            return self._get_ollama_response(prompt, think, raw, start_time)
+    
+    def _get_ollama_response(self, prompt, think, raw, start_time):
+        """使用本地Ollama获取响应"""
+        try:
+            logger.info(f"开始调用本地Ollama模型 ({self.ollama_model})，think={think}, raw={raw}")
             response = ollama.generate(
                 model=self.ollama_model,
                 prompt=prompt,
@@ -111,7 +177,7 @@ class AIManager:
             
             if raw:
                 end_time = time.time()
-                logger.info(f"Ollama 模型调用完成，耗时: {end_time - start_time:.2f} 秒")
+                logger.info(f"本地Ollama模型调用完成，耗时: {end_time - start_time:.2f} 秒")
                 return response
             
             ollama_response = response.get("response", "")
@@ -125,11 +191,11 @@ class AIManager:
             }
             
             end_time = time.time()
-            logger.info(f"Ollama 模型调用完成，响应长度: {len(cleaned_response)} 字符，耗时: {end_time - start_time:.2f} 秒")
+            logger.info(f"本地Ollama模型调用完成，响应长度: {len(cleaned_response)} 字符，耗时: {end_time - start_time:.2f} 秒")
             return result
         except Exception as e:
             end_time = time.time()
-            logger.error(f"Ollama 调用失败: {e}，耗时: {end_time - start_time:.2f} 秒")
+            logger.error(f"本地Ollama调用失败: {e}，耗时: {end_time - start_time:.2f} 秒")
             logger.debug(traceback.format_exc())
             # 返回包含默认值的字典，确保调用者能正常处理
             return {
@@ -137,11 +203,77 @@ class AIManager:
                 "thinking": None
             }
     
-    def get_ollama_response_with_tools(self, prompt, think=False):
-        """调用本地 Ollama 模型获取响应，支持工具调用，返回原始结构"""
+    def get_ollama_response(self, prompt, think=False, raw=False):
+        """保持向后兼容性的方法，调用新的get_ai_response方法"""
+        return self.get_ai_response(prompt, think, raw, use_siliconflow=False)
+    
+    def get_ai_response_with_tools(self, prompt, think=False, use_siliconflow=None):
+        """
+        获取AI模型响应（支持工具调用），可选择使用硅基流动API或本地Ollama
+        
+        Args:
+            prompt: 输入提示
+            think: 是否返回推理过程
+            use_siliconflow: 是否使用硅基流动API，None表示自动选择
+            
+        Returns:
+            包含响应、思考和工具调用的字典
+        """
         start_time = time.time()
+        
+        # 决定使用哪种API
+        if use_siliconflow is None:
+            use_siliconflow = self.siliconflow_client is not None
+        
+        if use_siliconflow and self.siliconflow_client:
+            return self._get_siliconflow_response_with_tools(prompt, think, start_time)
+        else:
+            return self._get_ollama_response_with_tools(prompt, think, start_time)
+    
+    def _get_siliconflow_response_with_tools(self, prompt, think, start_time):
+        """使用硅基流动API获取带工具的响应"""
         try:
-            logger.info(f"开始调用 Ollama 模型（带工具）({self.ollama_model})，think={think}")
+            logger.info(f"开始调用硅基流动API（带工具）({Config.SILICONFLOW_MODEL})，think={think}")
+            
+            # 转换工具格式为硅基流动API格式
+            tools_for_siliconflow = []
+            for tool_name, tool_info in self.tools.items():
+                tools_for_siliconflow.append({
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "description": tool_info["description"],
+                        "parameters": {},
+                        "strict": False
+                    }
+                })
+            
+            response = self.siliconflow_client.chat_with_tools(
+                prompt=prompt,
+                tools=tools_for_siliconflow,
+                think=think,
+                temperature=Config.SILICONFLOW_TEMPERATURE,
+                top_p=Config.SILICONFLOW_TOP_P,
+                frequency_penalty=Config.SILICONFLOW_FREQUENCY_PENALTY
+            )
+            
+            end_time = time.time()
+            response_length = len(response.get("response", ""))
+            tool_calls_count = len(response.get("tool_calls", []))
+            logger.info(f"硅基流动API（带工具）调用完成，响应长度: {response_length} 字符，工具调用数: {tool_calls_count}，耗时: {end_time - start_time:.2f} 秒")
+            return response
+            
+        except Exception as e:
+            end_time = time.time()
+            logger.error(f"硅基流动API（带工具）调用失败: {e}，耗时: {end_time - start_time:.2f} 秒，回退到本地Ollama")
+            logger.debug(traceback.format_exc())
+            # 回退到本地Ollama
+            return self._get_ollama_response_with_tools(prompt, think, start_time)
+    
+    def _get_ollama_response_with_tools(self, prompt, think, start_time):
+        """使用本地Ollama获取带工具的响应"""
+        try:
+            logger.info(f"开始调用本地Ollama模型（带工具）({self.ollama_model})，think={think}")
             response = ollama.generate(
                 model=self.ollama_model,
                 prompt=prompt,
@@ -159,13 +291,17 @@ class AIManager:
             end_time = time.time()
             response_length = len(filtered_response.get("response", ""))
             tool_calls_count = len(filtered_response.get("tool_calls", []))
-            logger.info(f"Ollama 模型（带工具）调用完成，响应长度: {response_length} 字符，工具调用数: {tool_calls_count}，耗时: {end_time - start_time:.2f} 秒")
+            logger.info(f"本地Ollama模型（带工具）调用完成，响应长度: {response_length} 字符，工具调用数: {tool_calls_count}，耗时: {end_time - start_time:.2f} 秒")
             return filtered_response
         except Exception as e:
             end_time = time.time()
-            logger.error(f"Ollama （带工具）调用失败: {e}，耗时: {end_time - start_time:.2f} 秒")
+            logger.error(f"本地Ollama（带工具）调用失败: {e}，耗时: {end_time - start_time:.2f} 秒")
             logger.debug(traceback.format_exc())
-            return {"response": "抱歉，我现在有点忙，稍后再聊吧～"}
+            return {"response": "抱歉，我现在有点忙，稍后再聊吧～", "thinking": None, "tool_calls": []}
+    
+    def get_ollama_response_with_tools(self, prompt, think=False):
+        """保持向后兼容性的方法，调用新的get_ai_response_with_tools方法"""
+        return self.get_ai_response_with_tools(prompt, think, use_siliconflow=False)
     
     def execute_tool_call(self, tool_call):
         """执行工具调用"""
@@ -190,7 +326,7 @@ class AIManager:
             logger.debug(traceback.format_exc())
             return {"error": str(e)}
     
-    def _summarize_conversation_sync(self, user_msg, assistant_msg, current_state):
+    def _summarize_conversation_sync(self, user_msg, assistant_msg, current_state, use_siliconflow=None):
         """同步执行对话总结"""
         start_time = time.time()
         prompt = f"""
@@ -220,19 +356,35 @@ class AIManager:
         {{"summary":"用户邀请智子睡觉，智子害羞接受并关心对方","user_emotion":"亲昵","ai_emotion":"害羞","affection_change":3,"heat_change":2,"sleepy_change":1}}
         """
 
+        # 决定使用哪种API
+        if use_siliconflow is None:
+            use_siliconflow = self.siliconflow_client is not None
+        
         try:
-            logger.info(f"开始调用 Ollama 模型（对话总结）({Config.OLLAMA_MODEL})")
-            response = ollama.generate(
-                model=Config.OLLAMA_MODEL,
-                prompt=prompt,
-                think=False,
-                stream=False,
-                options={"temperature": 0.1, "gpu_layers": 999, "num_thread": 12, "n_ctx": 4096}
-            )
+            if use_siliconflow and self.siliconflow_client:
+                logger.info(f"开始调用硅基流动API（对话总结）({Config.SILICONFLOW_MODEL})")
+                response = self.siliconflow_client.simple_chat(
+                    prompt=prompt,
+                    think=False,
+                    temperature=0.1,  # 对话总结需要较低的温度
+                    top_p=0.9
+                )
+                raw_response = response.get("response", "").strip()
+            else:
+                logger.info(f"开始调用本地Ollama模型（对话总结）({Config.OLLAMA_MODEL})")
+                response = ollama.generate(
+                    model=Config.OLLAMA_MODEL,
+                    prompt=prompt,
+                    think=False,
+                    stream=False,
+                    options={"temperature": 0.1, "gpu_layers": 999, "num_thread": 12, "n_ctx": 4096}
+                )
+                raw_response = response.get("response", "").strip()
+            
             end_time = time.time()
-            raw_response = response.get("response", "").strip()
             summary_length = len(raw_response)
-            logger.info(f"Ollama 模型（对话总结）调用完成，原始响应长度: {summary_length} 字符，耗时: {end_time - start_time:.2f} 秒")
+            api_name = "硅基流动API" if (use_siliconflow and self.siliconflow_client) else "本地Ollama"
+            logger.info(f"{api_name}（对话总结）调用完成，原始响应长度: {summary_length} 字符，耗时: {end_time - start_time:.2f} 秒")
             
             # 解析JSON响应
             try:
@@ -287,12 +439,21 @@ class AIManager:
             logger.debug(traceback.format_exc())
             return {"error": "模型调用失败"}
     
-    def summarize_conversation(self, user_msg, assistant_msg, current_state, async_mode=True):
-        """使用 LLM 总结对话并生成情感摘要，支持异步执行"""
+    def summarize_conversation(self, user_msg, assistant_msg, current_state, async_mode=True, use_siliconflow=None):
+        """
+        使用 LLM 总结对话并生成情感摘要，支持异步执行
+        
+        Args:
+            user_msg: 用户消息
+            assistant_msg: 助手消息
+            current_state: 当前情感状态
+            async_mode: 是否异步执行
+            use_siliconflow: 是否使用硅基流动API，None表示自动选择
+        """
         if async_mode:
             # 异步模式：提交到线程池执行，不阻塞主流程
-            self.executor.submit(self._summarize_conversation_sync, user_msg, assistant_msg, current_state)
+            self.executor.submit(self._summarize_conversation_sync, user_msg, assistant_msg, current_state, use_siliconflow)
             return None  # 异步模式下不返回结果，避免阻塞
         else:
             # 同步模式：直接执行并返回结果
-            return self._summarize_conversation_sync(user_msg, assistant_msg, current_state)
+            return self._summarize_conversation_sync(user_msg, assistant_msg, current_state, use_siliconflow)
