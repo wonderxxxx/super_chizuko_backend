@@ -138,10 +138,9 @@ class AIManager:
         """使用硅基流动API获取响应"""
         try:
             logger.info(f"开始调用硅基流动API ({Config.SILICONFLOW_MODEL})，think={think}, raw={raw}")
-            response = self.siliconflow_client.simple_chat(
-                prompt=prompt,
-                think=think,
-                raw=raw,
+            response = self.siliconflow_client.chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                model=Config.SILICONFLOW_MODEL,
                 temperature=Config.SILICONFLOW_TEMPERATURE,
                 top_p=Config.SILICONFLOW_TOP_P,
                 frequency_penalty=Config.SILICONFLOW_FREQUENCY_PENALTY
@@ -152,9 +151,16 @@ class AIManager:
                 logger.info(f"硅基流动API调用完成，耗时: {end_time - start_time:.2f} 秒")
                 return response
             
+            # 提取回复内容
+            content = response['choices'][0]['message']['content']
+            
             end_time = time.time()
-            logger.info(f"硅基流动API调用完成，响应长度: {len(response.get('response', ''))} 字符，耗时: {end_time - start_time:.2f} 秒")
-            return response
+            logger.info(f"硅基流动API调用完成，响应长度: {len(content)} 字符，耗时: {end_time - start_time:.2f} 秒")
+            
+            return {
+                "response": content,
+                "thinking": None  # SiliconFlow API 不返回思考过程
+            }
             
         except Exception as e:
             end_time = time.time()
@@ -363,13 +369,13 @@ class AIManager:
         try:
             if use_siliconflow and self.siliconflow_client:
                 logger.info(f"开始调用硅基流动API（对话总结）({Config.SILICONFLOW_MODEL})")
-                response = self.siliconflow_client.simple_chat(
-                    prompt=prompt,
-                    think=False,
+                response = self.siliconflow_client.chat_completion(
+                    messages=[{"role": "user", "content": prompt}],
+                    model=Config.SILICONFLOW_MODEL,
                     temperature=0.1,  # 对话总结需要较低的温度
                     top_p=0.9
                 )
-                raw_response = response.get("response", "").strip()
+                raw_response = response['choices'][0]['message']['content'].strip()
             else:
                 logger.info(f"开始调用本地Ollama模型（对话总结）({Config.OLLAMA_MODEL})")
                 response = ollama.generate(
