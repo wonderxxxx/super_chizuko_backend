@@ -3,6 +3,9 @@ import datetime
 import os
 import threading
 import traceback
+import re
+import math
+from collections import defaultdict
 from config import Config
 os.environ["ANONYMIZED_TELEMETRY"]="False"
 class Memory:
@@ -152,7 +155,7 @@ class MemoryManager:
         # 去重
         return list(set(tags))
     
-    def add_memory(self, user_msg, assistant_msg, state, memory_type="conversation", category="general", tags=None, sentiment="neutral", priority="medium", importance=0.5):
+    def add_memory(self, user_msg, assistant_msg, state, memory_type="conversation", category="general", tags=None, sentiment="neutral", priority="medium", importance=None):
         """添加聊天记忆到向量数据库"""
         if not self.collection:
             print("未设置记忆集合，无法添加记忆")
@@ -172,6 +175,10 @@ class MemoryManager:
             embedding = self._encode_text(memory_content)
             memory_id = f"memory_{datetime.datetime.now().timestamp()}"
             current_time = time.time()
+            
+            # 如果未提供重要性，则自动计算
+            if importance is None:
+                importance = self.calculate_memory_importance(user_msg_str, assistant_msg_str, state_str)
             
             # 如果未提供标签，则自动从对话内容生成
             if tags is None:
@@ -204,7 +211,7 @@ class MemoryManager:
                     "last_accessed": datetime.datetime.fromtimestamp(current_time).isoformat()
                 }]
             )
-            print(f"已存储记忆: {user_msg_str} -> {assistant_msg_str}...")
+            print(f"已存储记忆 (重要性: {importance:.2f}): {user_msg_str} -> {assistant_msg_str}...")
 
     def retrieve_relevant_memories(self, query, n_results=Config.RELEVANT_MEMORIES_COUNT):
         """检索与当前查询相关的记忆"""
@@ -388,3 +395,374 @@ class MemoryManager:
         with self.memory_lock:
             all_memories = self.collection.get()
             return bool(all_memories and all_memories.get('ids'))
+
+    # ========== 轻量级智能记忆优化功能 ==========
+    
+    def calculate_memory_importance(self, user_msg, assistant_msg, state):
+        """计算记忆重要性 - 基于多因素的智能评分"""
+        importance = 0.3  # 降低基础重要性，让各因素有更大影响空间
+        
+        try:
+            # 1. 情感强度因素
+            emotional_intensity = self._calculate_emotional_intensity(state)
+            importance += emotional_intensity * 0.25
+            
+            # 2. 话题独特性因素
+            topic_uniqueness = self._calculate_topic_uniqueness(user_msg + " " + assistant_msg)
+            importance += topic_uniqueness * 0.2
+            
+            # 3. 交互质量因素
+            interaction_quality = self._calculate_interaction_quality(user_msg, assistant_msg)
+            importance += interaction_quality * 0.15
+            
+            # 4. 信息密度因素
+            info_density = self._calculate_information_density(user_msg + " " + assistant_msg)
+            importance += info_density * 0.15
+            
+            # 5. 时间相关性因素（新鲜度）
+            time_relevance = self._calculate_time_relevance()
+            importance += time_relevance * 0.05
+            
+            # 6. 关键词匹配度
+            keyword_relevance = self._calculate_keyword_relevance(user_msg, assistant_msg)
+            importance += keyword_relevance * 0.2
+            
+        except Exception as e:
+            print(f"计算记忆重要性时出错: {e}")
+        
+        return min(max(importance, 0.1), 1.0)  # 限制在0.1-1.0范围内
+    
+    def _calculate_emotional_intensity(self, state):
+        """计算情感强度"""
+        emotional_states = {
+            'S7': 0.9,  # 过热模式 - 极强情感
+            'S8': 0.8,  # 脆弱依赖模式 - 强情感
+            'S4': 0.7,  # 恋爱萌芽/吃醋 - 较强情感
+            'S3': 0.5,  # 姐姐感 - 中等情感
+            'S5': 0.4,  # 宅女模式 - 中等情感
+            'S2': 0.2,  # 学者模式 - 低情感
+            'S1': 0.3,  # 妹妹模式 - 中等情感
+        }
+        return emotional_states.get(state, 0.3)
+    
+    def _calculate_topic_uniqueness(self, content):
+        """计算话题独特性"""
+        # 常见话题词汇（出现频率高则独特性低）
+        common_words = {
+            "你好", "再见", "谢谢", "不客气", "嗯嗯", "哈哈", "呵呵", "是的", "不是",
+            "哥哥", "我", "你", "他", "她", "的", "了", "着", "过", "吗", "呢", "吧",
+            "聊天", "说话", "对话", "回答", "问题", "今天", "天气", "不错", "很好", "好的"
+        }
+        
+        words = re.findall(r'[\w]+', content.lower())
+        if not words:
+            return 0.2
+            
+        unique_words = [w for w in words if w not in common_words and len(w) > 1]
+        uniqueness_ratio = len(unique_words) / max(len(words), 1)
+        
+        # 线性映射，让独特性得分分布更合理
+        if uniqueness_ratio < 0.2:
+            return 0.2
+        elif uniqueness_ratio < 0.5:
+            return 0.4 + (uniqueness_ratio - 0.2) * 1.0
+        else:
+            return 0.7 + (uniqueness_ratio - 0.5) * 0.6
+    
+    def _calculate_interaction_quality(self, user_msg, assistant_msg):
+        """计算交互质量"""
+        quality = 0.2  # 降低基础质量
+        
+        # 对话长度适中且有意义
+        total_length = len(user_msg) + len(assistant_msg)
+        if 50 <= total_length <= 500:
+            quality += 0.3
+        elif 20 <= total_length <= 1000:
+            quality += 0.15
+        elif total_length < 10:  # 太短的对话
+            quality -= 0.1
+        
+        # 有具体内容（不是简单的回应）
+        if len(assistant_msg) > 20 and len(user_msg) > 5:
+            quality += 0.2
+        elif len(assistant_msg) < 5 or len(user_msg) < 3:  # 太简单的回应
+            quality -= 0.15
+            
+        # 包含问号或感叹号（有情感投入）
+        if '?' in user_msg or '!' in user_msg or '?' in assistant_msg or '!' in assistant_msg:
+            quality += 0.15
+            
+        return min(max(quality, 0.0), 1.0)
+    
+    def _calculate_information_density(self, content):
+        """计算信息密度"""
+        if not content:
+            return 0.1
+            
+        # 计算实词比例（名词、动词、形容词）
+        content_words = re.findall(r'[\w]+', content)
+        if not content_words:
+            return 0.1
+            
+        # 简单的实词判断（长度>=2且不是常见虚词）
+        function_words = {"的", "了", "着", "过", "和", "与", "或", "但", "而", "因", "为", "是", "有", "在", "这", "那"}
+        content_words_count = sum(1 for w in content_words if len(w) >= 2 and w not in function_words)
+        density = content_words_count / max(len(content_words), 1)
+        
+        # 调整密度计算，让得分分布更合理
+        if density < 0.3:
+            return density
+        elif density < 0.6:
+            return 0.3 + (density - 0.3) * 0.8
+        else:
+            return 0.54 + (density - 0.6) * 1.15
+    
+    def _calculate_time_relevance(self):
+        """计算时间相关性（新鲜度）"""
+        # 当前时间相关性总是为1，这个函数为后续扩展保留
+        return 1.0
+    
+    def _calculate_keyword_relevance(self, user_msg, assistant_msg):
+        """计算关键词相关性"""
+        # 重要关键词列表
+        important_keywords = [
+            "喜欢", "讨厌", "害怕", "担心", "开心", "难过", "生气", "想念",
+            "第一次", "最后", "永远", "一直", "从来", "总是", "偶尔",
+            "约定", "承诺", "秘密", "故事", "回忆", "梦想", "目标",
+            "学习", "工作", "家庭", "朋友", "健康", "生活", "未来",
+            "限定", "机甲", "蜂黄泉", "模型", "玩具"  # 智子特有关键词
+        ]
+        
+        content = (user_msg + " " + assistant_msg).lower()
+        keyword_count = sum(1 for keyword in important_keywords if keyword in content)
+        
+        # 调整关键词相关性得分
+        if keyword_count == 0:
+            return 0.0
+        elif keyword_count == 1:
+            return 0.3
+        elif keyword_count <= 3:
+            return 0.5
+        else:
+            return min(0.3 + keyword_count * 0.1, 0.8)
+    
+    def smart_retrieve_memories(self, query, current_state, n_results=3):
+        """智能记忆检索 - 结合多种因素的优化检索"""
+        if not self.collection:
+            return {"documents": [[]], "metadatas": [[]]}
+        
+        with self.memory_lock:
+            # 1. 基础向量检索
+            base_results = self.retrieve_relevant_memories(query, n_results * 2)  # 获取更多候选
+            
+            if not base_results.get('ids') or not base_results['ids'][0]:
+                return {"documents": [[]], "metadatas": [[]]}
+            
+            # 2. 智能过滤和重排序
+            scored_memories = []
+            for i, memory_id in enumerate(base_results['ids'][0]):
+                metadata = base_results['metadatas'][0][i] if base_results.get('metadatas') else {}
+                content = base_results['documents'][0][i] if base_results.get('documents') else ""
+                distance = base_results['distances'][0][i] if base_results.get('distances') else 1.0
+                
+                # 创建记忆对象
+                memory = Memory(
+                    memory_id=memory_id,
+                    content=content,
+                    timestamp=datetime.datetime.fromisoformat(metadata.get('timestamp', datetime.datetime.now().isoformat())).timestamp(),
+                    state=metadata.get('state', 'idle'),
+                    memory_type=metadata.get('memory_type', 'conversation'),
+                    category=metadata.get('category', 'general'),
+                    tags=metadata.get('tags', "").split(",") if metadata.get('tags') else [],
+                    sentiment=metadata.get('sentiment', 'neutral'),
+                    priority=metadata.get('priority', 'medium'),
+                    importance=metadata.get('importance', 0.5),
+                    access_count=metadata.get('access_count', 0),
+                    last_accessed=datetime.datetime.fromisoformat(metadata.get('last_accessed', datetime.datetime.now().isoformat())).timestamp()
+                )
+                
+                # 计算综合得分
+                score = self._calculate_composite_score(memory, query, current_state, distance)
+                scored_memories.append((memory, score))
+            
+            # 3. 按得分排序并返回前n_results个
+            scored_memories.sort(key=lambda x: x[1], reverse=True)
+            top_memories = scored_memories[:n_results]
+            
+            # 4. 格式化返回结果
+            return self._format_smart_results(top_memories)
+    
+    def _calculate_composite_score(self, memory, query, current_state, vector_distance):
+        """计算记忆综合得分"""
+        score = 0.0
+        
+        # 1. 向量相似度得分（归一化到0-1）
+        similarity_score = 1 / (1 + vector_distance)
+        score += similarity_score * 0.4
+        
+        # 2. 记忆重要性得分
+        importance_score = memory.importance
+        score += importance_score * 0.2
+        
+        # 3. 时间衰减得分（越新的记忆得分越高）
+        time_score = self._calculate_time_decay_score(memory)
+        score += time_score * 0.15
+        
+        # 4. 访问频率得分
+        access_score = self._calculate_access_score(memory)
+        score += access_score * 0.1
+        
+        # 5. 状态匹配得分
+        state_score = self._calculate_state_match_score(memory.state, current_state)
+        score += state_score * 0.1
+        
+        # 6. 关键词匹配得分
+        keyword_score = self._calculate_keyword_match_score(memory.content, query)
+        score += keyword_score * 0.05
+        
+        return score
+    
+    def _calculate_time_decay_score(self, memory):
+        """计算时间衰减得分"""
+        current_time = time.time()
+        time_diff = current_time - memory.timestamp
+        
+        # 指数衰减，半衰期为7天
+        half_life = 7 * 24 * 60 * 60  # 7天
+        decay_factor = math.exp(-time_diff / half_life)
+        
+        return decay_factor
+    
+    def _calculate_access_score(self, memory):
+        """计算访问频率得分"""
+        # 访问频率得分，但有上限
+        return min(memory.access_count / 10, 1.0)
+    
+    def _calculate_state_match_score(self, memory_state, current_state):
+        """计算状态匹配得分"""
+        if memory_state == current_state:
+            return 1.0
+        elif self._are_states_compatible(memory_state, current_state):
+            return 0.7
+        else:
+            return 0.3
+    
+    def _are_states_compatible(self, state1, state2):
+        """判断两个状态是否兼容"""
+        # 定义状态兼容性
+        compatible_pairs = {
+            ('S1', 'S3'), ('S3', 'S1'),  # 妹妹模式与姐姐感兼容
+            ('S1', 'S5'), ('S5', 'S1'),  # 妹妹模式与宅女模式兼容
+            ('S2', 'S5'), ('S5', 'S2'),  # 学者模式与宅女模式兼容
+        }
+        return (state1, state2) in compatible_pairs or (state2, state1) in compatible_pairs
+    
+    def _calculate_keyword_match_score(self, memory_content, query):
+        """计算关键词匹配得分"""
+        memory_words = set(re.findall(r'[\w]+', memory_content.lower()))
+        query_words = set(re.findall(r'[\w]+', query.lower()))
+        
+        if not query_words:
+            return 0.5
+            
+        # 计算词汇重叠度
+        intersection = memory_words.intersection(query_words)
+        jaccard_similarity = len(intersection) / len(memory_words.union(query_words))
+        
+        return jaccard_similarity
+    
+    def _format_smart_results(self, scored_memories):
+        """格式化智能检索结果"""
+        if not scored_memories:
+            return {"documents": [[]], "metadatas": [[]]}
+        
+        documents = []
+        metadatas = []
+        
+        for memory, score in scored_memories:
+            documents.append(memory.content)
+            metadatas.append({
+                "timestamp": datetime.datetime.fromtimestamp(memory.timestamp).isoformat(),
+                "user_msg": memory.content.split("\n")[0].replace("用户: ", ""),
+                "assistant_msg": memory.content.split("\n")[1].replace("智子: ", "") if "\n" in memory.content else "",
+                "state": memory.state,
+                "memory_type": memory.memory_type,
+                "category": memory.category,
+                "tags": memory.tags,
+                "sentiment": memory.sentiment,
+                "priority": memory.priority,
+                "importance": memory.importance,
+                "access_count": memory.access_count,
+                "last_accessed": datetime.datetime.fromtimestamp(memory.last_accessed).isoformat(),
+                "composite_score": score
+            })
+        
+        return {
+            "documents": [documents],
+            "metadatas": [metadatas],
+            "scores": [[score for _, score in scored_memories]]
+        }
+    
+    def async_memory_optimization(self, user_id):
+        """异步记忆优化处理 - 后台运行不影响用户体验"""
+        def background_task():
+            try:
+                time.sleep(1)  # 确保用户先收到回复
+                
+                with self.memory_lock:
+                    # 1. 清理低质量记忆
+                    self._cleanup_low_quality_memories()
+                    
+                    # 2. 更新访问统计
+                    self._update_access_statistics()
+                    
+                    # 3. 重新计算记忆重要性
+                    self._recalculate_memory_importances()
+                    
+            except Exception as e:
+                print(f"异步记忆优化出错: {e}")
+                print(traceback.format_exc())
+        
+        # 使用守护线程，不阻塞主程序退出
+        threading.Thread(target=background_task, daemon=True).start()
+    
+    def _cleanup_low_quality_memories(self):
+        """清理低质量记忆"""
+        if not self.collection:
+            return
+            
+        all_memories = self.collection.get()
+        if not all_memories.get('ids'):
+            return
+        
+        to_delete = []
+        for i, memory_id in enumerate(all_memories['ids']):
+            metadata = all_memories['metadatas'][i] if all_memories.get('metadatas') else {}
+            
+            # 删除条件
+            importance = metadata.get('importance', 0.5)
+            access_count = metadata.get('access_count', 0)
+            timestamp = metadata.get('timestamp', datetime.datetime.now().isoformat())
+            memory_time = datetime.datetime.fromisoformat(timestamp).timestamp()
+            
+            # 低重要性且很少访问的旧记忆
+            current_time = time.time()
+            age_days = (current_time - memory_time) / (24 * 60 * 60)
+            
+            if (importance < 0.3 and access_count < 2 and age_days > 30) or \
+               (importance < 0.2 and access_count < 1 and age_days > 7):
+                to_delete.append(memory_id)
+        
+        if to_delete:
+            self.collection.delete(ids=to_delete)
+            print(f"清理了 {len(to_delete)} 条低质量记忆")
+    
+    def _update_access_statistics(self):
+        """更新访问统计"""
+        # 这个函数为未来的统计功能预留
+        pass
+    
+    def _recalculate_memory_importances(self):
+        """重新计算记忆重要性"""
+        # 这个函数为未来的重要性重计算预留
+        pass
