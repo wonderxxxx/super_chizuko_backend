@@ -165,11 +165,11 @@ class ChatService:
                 include_thinking = bool(data.get("include_thinking", False))
                 
                 # 一次调用获取响应和思考过程，避免两次API请求
-                ai_result = self.ai_manager.get_ai_response(prompt, think=include_thinking)
-                final_text = ai_result["response"]
-                thinking_text = ai_result["thinking"] if include_thinking else None
+                ollama_result = self.ai_manager.get_ollama_response(prompt, think=include_thinking)
+                final_text = ollama_result["response"]
+                thinking_text = ollama_result["thinking"] if include_thinking else None
                 
-                print(f"AI 回复: {final_text}")
+                print(f"Ollama 回复: {final_text}")
                 # 确保final_text始终是字符串，避免将GenerateResponse对象传递给add_memory
                 if not isinstance(final_text, str):
                     final_text = str(final_text)
@@ -293,21 +293,21 @@ class ChatService:
                     # 生成带有角色设定和状态的提示
                     prompt = self.prompt_generator.generate_chat_prompt(user_msg, new_state)
                     
-                    # 调用 AI 获取响应，支持工具调用
-                    ai_response = self.ai_manager.get_ai_response_with_tools(prompt, think=include_thinking)
+                    # 调用 Ollama 获取响应，支持工具调用
+                    ollama_response = self.ai_manager.get_ollama_response_with_tools(prompt, think=include_thinking)
                     
-                    final_response = ai_response.get("response", "")
-                    thinking_text = ai_response.get("thinking")
+                    final_response = ollama_response.get("response", "")
+                    thinking_text = ollama_response.get("thinking")
                     
                     # 检查是否有工具调用
-                    if "tool_calls" in ai_response and ai_response["tool_calls"]:
-                        tool_calls = ai_response["tool_calls"]
+                    if "tool_calls" in ollama_response and ollama_response["tool_calls"]:
+                        tool_calls = ollama_response["tool_calls"]
                         tool_results = []
                         
                         # 执行所有工具调用
                         for tool_call in tool_calls:
-                            tool_name = tool_call["name"]
-                            arguments = tool_call["arguments"]
+                            tool_name = tool_call["function"]["name"]
+                            arguments = tool_call["function"]["arguments"]
                             
                             # 执行工具调用
                             result = self.ai_manager.execute_tool_call({
@@ -316,7 +316,7 @@ class ChatService:
                             })
                             
                             tool_results.append({
-                                "tool_call_id": tool_call.get("id", ""),
+                                "tool_call_id": tool_call["id"],
                                 "result": result
                             })
                         
@@ -328,7 +328,7 @@ class ChatService:
                                 tool_result_prompt += f"工具调用结果: {json.dumps(tool_result['result'])}\n"
                             
                             # 调用模型获取最终回复
-                            final_response_data = self.ai_manager.get_ai_response(tool_result_prompt)
+                            final_response_data = self.ai_manager.get_ollama_response(tool_result_prompt)
                             final_response = final_response_data["response"]
                 finally:
                     # 恢复原始记忆集合
@@ -417,7 +417,7 @@ class ChatService:
                     return jsonify({"status": "skipped", "message": "已有历史记忆，不再生成开场白"})
                 state = emotional_machine.current_state
                 prompt = self.prompt_generator.generate_initial_prompt(state)
-                result = self.ai_manager.get_ai_response(prompt)
+                result = self.ai_manager.get_ollama_response(prompt)
                 final_text = result["response"]
                 self.memory_manager.add_memory("[INIT]", final_text, state, memory_type="conversation", category="system")
             finally:
@@ -476,7 +476,7 @@ class ChatService:
                     next(db_gen, None)
                 state = emotional_machine.current_state
                 prompt = self.prompt_generator.generate_initial_prompt(state)
-                result = self.ai_manager.get_ai_response(prompt)
+                result = self.ai_manager.get_ollama_response(prompt)
                 initial_text = result["response"]
                 self.memory_manager.add_memory("[INIT]", initial_text, state, memory_type="conversation", category="system")
             finally:
