@@ -161,7 +161,7 @@ class ChatService:
                 # 设置当前用户的记忆集合
                 self.memory_manager.set_collection_by_name(collection_name)
                 
-                prompt = self.prompt_generator.generate_chat_prompt(user_msg, new_state)
+                prompt = self.prompt_generator.generate_smart_chat_prompt(user_msg, new_state)
                 include_thinking = bool(data.get("include_thinking", False))
                 
                 # 一次调用获取响应和思考过程，避免两次API请求
@@ -181,7 +181,11 @@ class ChatService:
                         # 创建临时记忆管理器实例，避免共享状态
                         temp_memory_manager = MemoryManager(self.chroma_client, self.ai_manager.embedding_model)
                         temp_memory_manager.set_collection_by_name(collection_name)
+                        # 使用智能重要性评分，不手动指定importance
                         temp_memory_manager.add_memory(user_msg, summary, new_state)
+                        
+                        # 启动异步记忆优化
+                        temp_memory_manager.async_memory_optimization(user_id)
                     except Exception as e:
                         print(f"异步记忆总结失败: {e}")
                         print(traceback.format_exc())
@@ -290,8 +294,8 @@ class ChatService:
                     # 设置当前用户的记忆集合
                     self.memory_manager.set_collection_by_name(collection_name)
                     
-                    # 生成带有角色设定和状态的提示
-                    prompt = self.prompt_generator.generate_chat_prompt(user_msg, new_state)
+                    # 使用智能记忆检索生成提示
+                    prompt = self.prompt_generator.generate_smart_chat_prompt(user_msg, new_state)
                     
                     # 调用 AI 获取响应，支持工具调用
                     ai_response = self.ai_manager.get_ai_response_with_tools(prompt, think=include_thinking)
@@ -346,7 +350,11 @@ class ChatService:
                         # 创建临时记忆管理器实例，避免共享状态
                         temp_memory_manager = MemoryManager(self.chroma_client, self.ai_manager.embedding_model)
                         temp_memory_manager.set_collection_by_name(collection_name)
+                        # 使用智能重要性评分，不手动指定importance
                         temp_memory_manager.add_memory(user_msg, summary, new_state)
+                        
+                        # 启动异步记忆优化
+                        temp_memory_manager.async_memory_optimization(user_id)
                     except Exception as e:
                         print(f"异步记忆总结失败: {e}")
                         print(traceback.format_exc())
