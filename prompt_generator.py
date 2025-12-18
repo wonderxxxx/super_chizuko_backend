@@ -41,18 +41,7 @@ class PromptGenerator:
                 if user_wants_food or not any(k in memory for k in food_keywords):
                     memory_context += f"{memory}\n"
         
-        # 可用工具信息
-        tools_info = """
-        【可用工具】
-        当你需要获取当前时间时，可以调用以下工具：
-        - 工具名称：getCurrentTime
-        - 工具描述：获取当前时间
-        - 调用格式：在需要时通过工具调用机制使用
-        【工具使用说明】
-        1. 当用户询问时间相关问题（如：睡了吗？现在几点？）时，必须先调用getCurrentTime工具获取当前时间
-        2. 根据获取到的时间信息来生成合适的回复
-        3. 例如：用户问"睡了吗？"，你应该先获取当前时间，如果是深夜则回复"现在已经很晚了，哥哥也该早点休息哦～"
-        """
+        
         # —— 模式覆盖层：根据当前状态动态加强角色行为一致性 ——
         state_overlay = f"""
 【模式覆盖层（根据当前状态执行）】
@@ -95,7 +84,7 @@ class PromptGenerator:
         
         {memory_context}
         
-        {tools_info}
+    【当前时间】：{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         
         【当前对话】
         用户：{user_msg}
@@ -104,7 +93,9 @@ class PromptGenerator:
         2. 回复简洁明了，控制在2-3句话，不要超过50字
         3. 语言风格符合妹妹的身份，自然亲切
         4. 避免冗长的解释和复杂的句式
-        5. 当需要获取时间时，必须调用getCurrentTime工具
+        5. 你可以根据当前时间来调整回复，例如（参考用的，不要照抄）：
+            - 现在是23:00，你可以回复“现在已经很晚了，哥哥也该早点休息哦～”
+            - 现在是12:00，你可以回复“现在是中午，哥哥可以继续聊聊天了”
         智子："""
         
         return prompt
@@ -148,18 +139,7 @@ class PromptGenerator:
             memory_context += "- 避免简单重复记忆中的内容，而是基于记忆进行延伸\n"
             memory_context += "- 如果记忆中的情况与当前不同，请适当地说明\n"
         
-        # 可用工具信息
-        tools_info = """
-        【可用工具】
-        当你需要获取当前时间时，可以调用以下工具：
-        - 工具名称：getCurrentTime
-        - 工具描述：获取当前时间
-        - 调用格式：在需要时通过工具调用机制使用
-        【工具使用说明】
-        1. 当用户询问时间相关问题（如：睡了吗？现在几点？）时，必须先调用getCurrentTime工具获取当前时间
-        2. 根据获取到的时间信息来生成合适的回复
-        3. 例如：用户问"睡了吗？"，你应该先获取当前时间，如果是深夜则回复"现在已经很晚了，哥哥也该早点休息哦～"
-        """
+        
         
         # —— 模式覆盖层：根据当前状态动态加强角色行为一致性 ——
         state_overlay = f"""
@@ -203,7 +183,7 @@ class PromptGenerator:
         
         {memory_context}
         
-        {tools_info}
+        【当前时间】：{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         
         【当前对话】
         用户：{user_msg}
@@ -213,7 +193,9 @@ class PromptGenerator:
         3. 语言风格符合妹妹的身份，自然亲切
         4. 避免冗长的解释和复杂的句式
         5. 善用历史记忆提供更个性化的回复
-        6. 当需要获取时间时，必须调用getCurrentTime工具
+        6. 你可以根据当前时间来调整回复，例如（参考用的，不要照抄）：
+            - 现在是23:00，你可以回复“现在已经很晚了，哥哥也该早点休息哦～”
+            - 现在是12:00，你可以回复“现在是中午，哥哥可以继续聊聊天了”
         智子："""
         
         return prompt
