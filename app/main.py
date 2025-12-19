@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, g
 from flask_cors import CORS
 from waitress import serve
 import chromadb
@@ -20,9 +20,6 @@ from database import init_db
 # 初始化数据库
 init_db()
 
-# 全局服务实例
-_chat_service = None
-
 def create_app():
     """创建Flask应用"""
     app = Flask(__name__)
@@ -37,15 +34,12 @@ def create_app():
     # 初始化向量数据库（持久化存储）
     chroma_client = chromadb.PersistentClient(path=Config.CHROMA_PERSIST_DIRECTORY)
     
-    # 初始化各个组件
-    emotional_machine = EmotionalStateMachine()
+    # 初始化全局共享组件
     ai_manager = AIManager()
-    memory_manager = MemoryManager(chroma_client, ai_manager.embedding_model)
-    prompt_generator = PromptGenerator(emotional_machine, memory_manager)
     
-    # 初始化聊天服务
-    global _chat_service
-    _chat_service = ChatService(emotional_machine, memory_manager, ai_manager, prompt_generator, chroma_client)
+    # 将共享组件存储在app配置中
+    app.config['CHROMA_CLIENT'] = chroma_client
+    app.config['AI_MANAGER'] = ai_manager
     
     # 注册蓝图路由
     from app.routers.health import health_bp
@@ -59,8 +53,22 @@ def create_app():
     return app
 
 def get_chat_service():
-    """获取聊天服务实例"""
-    return _chat_service
+    """获取聊天服务实例，为每个请求创建独立实例"""
+    from flask import current_app
+    
+    # 从当前应用配置中获取共享组件
+    chroma_client = current_app.config['CHROMA_CLIENT']
+    ai_manager = current_app.config['AI_MANAGER']
+    
+    # 为每个请求创建独立的组件实例
+    emotional_machine = EmotionalStateMachine()
+    memory_manager = MemoryManager(chroma_client, ai_manager.embedding_model)
+    prompt_generator = PromptGenerator(emotional_machine, memory_manager)
+    
+    # 创建独立的聊天服务实例
+    chat_service = ChatService(emotional_machine, memory_manager, ai_manager, prompt_generator, chroma_client)
+    
+    return chat_service
 
 def main(app=None):
     """启动应用的主函数"""

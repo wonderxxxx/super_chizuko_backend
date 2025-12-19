@@ -99,10 +99,9 @@ class SiliconFlowClient(AIProvider):
         
         try:
             # 添加调试信息
+            logger.info(f"开始发送请求到硅基流动API: {self.base_url}")
             logger.info(f"API密钥长度: {len(self.api_key) if self.api_key else 0}")
-            logger.info(f"请求URL: {self.base_url}")
-            logger.info(f"请求头: {headers}")
-            logger.info(f"请求体: {payload}")
+            logger.info(f"请求超时设置: 30秒")
             
             response = requests.post(
                 self.base_url,
@@ -111,22 +110,44 @@ class SiliconFlowClient(AIProvider):
                 timeout=30
             )
             
-            logger.info(f"响应状态码: {response.status_code}")
-            logger.info(f"响应头: {response.headers}")
-            logger.info(f"响应内容: {response.text}")
+            logger.info(f"请求完成，响应状态码: {response.status_code}")
             
             response.raise_for_status()  # 检查HTTP错误
             
             result = response.json()
+            logger.info(f"成功解析响应JSON")
             
             # 处理响应
             if result.get("choices"):
-                return {"response": result["choices"][0]["message"]["content"]}
+                choice = result["choices"][0]
+                response_data = {
+                    "response": choice["message"]["content"]
+                }
+                # 处理思考过程
+                if "thinking" in choice:
+                    response_data["thinking"] = choice["thinking"]
+                    logger.info(f"响应包含思考过程，长度: {len(response_data['thinking'])} 字符")
+                logger.info(f"响应内容长度: {len(response_data['response'])} 字符")
+                return response_data
             elif result.get("tool_calls"):
+                logger.info(f"响应包含工具调用，数量: {len(result['tool_calls'])}")
                 return result
             else:
+                logger.error(f"硅基流动API响应格式错误，缺少choices或tool_calls字段")
                 raise ValueError(f"硅基流动API响应格式错误: {result}")
                 
+        except requests.exceptions.Timeout:
+            logger.error(f"硅基流动API请求超时（30秒）")
+            logger.debug(traceback.format_exc())
+            raise
+        except requests.exceptions.ConnectionError:
+            logger.error(f"硅基流动API连接失败")
+            logger.debug(traceback.format_exc())
+            raise
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"硅基流动APIHTTP错误: {e.response.status_code} - {e.response.text}")
+            logger.debug(traceback.format_exc())
+            raise
         except requests.exceptions.RequestException as e:
             logger.error(f"硅基流动API请求失败: {e}")
             logger.debug(traceback.format_exc())

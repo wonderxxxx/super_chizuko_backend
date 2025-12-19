@@ -130,7 +130,6 @@ class AIManager:
             response = self.siliconflow_client.chat(
                 prompt=prompt,
                 think=think,
-                raw=raw,
                 temperature=Config.SILICONFLOW_TEMPERATURE,
                 top_p=Config.SILICONFLOW_TOP_P,
                 frequency_penalty=Config.SILICONFLOW_FREQUENCY_PENALTY
@@ -142,7 +141,9 @@ class AIManager:
                 return response
             
             end_time = time.time()
-            logger.info(f"硅基流动API调用完成，响应长度: {len(response.get('response', ''))} 字符，耗时: {end_time - start_time:.2f} 秒")
+            response_length = len(response.get('response', ''))
+            thinking_length = len(response.get('thinking', '')) if 'thinking' in response else 0
+            logger.info(f"硅基流动API调用完成，响应长度: {response_length} 字符，思考过程长度: {thinking_length} 字符，耗时: {end_time - start_time:.2f} 秒")
             return response
             
         except Exception as e:
