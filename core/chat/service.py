@@ -113,24 +113,7 @@ class ChatService:
                 if not isinstance(final_text, str):
                     final_text = str(final_text)
                 
-                # 异步执行聊天记忆总结和保存
-                def async_memory_summary():
-                    try:
-                        summary = self.ai_manager.summarize_conversation(user_msg, final_text, new_state, async_mode=False)
-                        # 创建临时记忆管理器实例，避免共享状态
-                        temp_memory_manager = MemoryManager(self.chroma_client, self.ai_manager.embedding_model)
-                        temp_memory_manager.set_collection_by_name(collection_name)
-                        # 使用智能重要性评分，不手动指定importance
-                        temp_memory_manager.add_memory(user_msg, summary, new_state)
-                        
-                        # 启动异步记忆优化
-                        temp_memory_manager.async_memory_optimization(user_id)
-                    except Exception as e:
-                        print(f"异步记忆总结失败: {e}")
-                        print(traceback.format_exc())
-                
-                # 使用线程异步执行，不阻塞响应返回
-                threading.Thread(target=async_memory_summary, daemon=True).start()
+                # 先不保存记忆，移到聊天记录保存之后
             finally:
                 # 恢复原始记忆集合
                 if original_collection:
@@ -148,6 +131,25 @@ class ChatService:
                 create_chat_history(db, user_id, user_msg, final_text, new_state)
             finally:
                 next(db_gen, None)
+            
+            # 异步执行聊天记忆总结和保存
+            def async_memory_summary():
+                try:
+                    summary = self.ai_manager.summarize_conversation(user_msg, final_text, new_state, async_mode=False)
+                    # 创建临时记忆管理器实例，避免共享状态
+                    temp_memory_manager = MemoryManager(self.chroma_client, self.ai_manager.embedding_model)
+                    temp_memory_manager.set_collection_by_name(collection_name)
+                    # 使用智能重要性评分，不手动指定importance
+                    temp_memory_manager.add_memory(user_msg, summary, new_state)
+                    
+                    # 启动异步记忆优化
+                    temp_memory_manager.async_memory_optimization(user_id)
+                except Exception as e:
+                    print(f"异步记忆总结失败: {e}")
+                    print(traceback.format_exc())
+            
+            # 使用线程异步执行，不阻塞响应返回
+            threading.Thread(target=async_memory_summary, daemon=True).start()
             
             resp_payload = {
                 "response": final_text,
@@ -193,7 +195,6 @@ class ChatService:
                 # 使用统一的AI响应方法，直接返回字符串
                 result = self.ai_manager.get_ai_response(prompt)
                 initial_text = result
-                self.memory_manager.add_memory("[INIT]", initial_text, state, memory_type="conversation", category="system")
             finally:
                 # 恢复原始记忆集合
                 if original_collection:
@@ -203,16 +204,14 @@ class ChatService:
                     self.memory_manager.collection_name = None
                     self.memory_manager.collection = None
             
-            # 保存聊天记录
-            db_gen = get_db()
-            db = next(db_gen)
-            try:
-                from database import create_chat_history
-                create_chat_history(db, user_id, "[INIT]", final_text, state)
-            finally:
-                next(db_gen, None)
+            # 聊天记录已在前面保存，这里不再重复
             
-            return jsonify({"status": "success", "response": final_text, "current_state": state, "state_description": emotional_machine.get_state_description(state), "emotional_variables": emotional_machine.variables})
+            # 保存记忆
+            temp_memory_manager = MemoryManager(self.chroma_client, self.ai_manager.embedding_model)
+            temp_memory_manager.set_collection_by_name(collection_name)
+            temp_memory_manager.add_memory("[INIT]", initial_text, state, memory_type="conversation", category="system")
+            
+            return jsonify({"status": "success", "response": initial_text, "current_state": state, "state_description": emotional_machine.get_state_description(state), "emotional_variables": emotional_machine.variables})
         except Exception as e:
             print(f"生成开场白服务错误: {e}")
             print(traceback.format_exc())
@@ -252,7 +251,6 @@ class ChatService:
                 prompt = self.prompt_generator.generate_initial_prompt(state)
                 result = self.ai_manager.get_ai_response(prompt)
                 initial_text = result["response"]
-                self.memory_manager.add_memory("[INIT]", initial_text, state, memory_type="conversation", category="system")
             finally:
                 # 恢复原始记忆集合
                 if original_collection:
@@ -261,6 +259,20 @@ class ChatService:
                     # 如果原来没有设置集合，清除当前集合
                     self.memory_manager.collection_name = None
                     self.memory_manager.collection = None
+            
+            # 保存聊天记录
+            db_gen = get_db()
+            db = next(db_gen)
+            try:
+                from database import create_chat_history
+                create_chat_history(db, user_id, "[INIT]", initial_text, state)
+            finally:
+                next(db_gen, None)
+            
+            # 保存记忆
+            temp_memory_manager = MemoryManager(self.chroma_client, self.ai_manager.embedding_model)
+            temp_memory_manager.set_collection_by_name(collection_name)
+            temp_memory_manager.add_memory("[INIT]", initial_text, state, memory_type="conversation", category="system")
             
             # 保存聊天记录
             db_gen = get_db()
