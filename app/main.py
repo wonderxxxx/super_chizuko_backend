@@ -6,19 +6,22 @@ import os
 import sys
 
 # 确保能正确导入情感状态机
-if not os.path.abspath(os.path.join(os.path.dirname(__file__), 'emotion_state_serv')) in sys.path:
-    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'emotion_state_serv')))
+if not os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'emotion_state_serv')) in sys.path:
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'emotion_state_serv')))
 
-from config import Config
-from memory_manager import MemoryManager
-from ai_manager import AIManager
+from config.settings import Config
+from core.memory.manager import MemoryManager
+from core.ai.manager import AIManager
 from prompt_generator import PromptGenerator
-from chat_service import ChatService
+from core.chat.service import ChatService
 from emo_serv import EmotionalStateMachine
 from database import init_db
 
 # 初始化数据库
 init_db()
+
+# 全局服务实例
+_chat_service = None
 
 def create_app():
     """创建Flask应用"""
@@ -40,25 +43,43 @@ def create_app():
     memory_manager = MemoryManager(chroma_client, ai_manager.embedding_model)
     prompt_generator = PromptGenerator(emotional_machine, memory_manager)
     
-    # 初始化聊天服务并注册路由
-    chat_service = ChatService(emotional_machine, memory_manager, ai_manager, prompt_generator, chroma_client)
-    chat_service.register_routes(app)
+    # 初始化聊天服务
+    global _chat_service
+    _chat_service = ChatService(emotional_machine, memory_manager, ai_manager, prompt_generator, chroma_client)
+    
+    # 注册蓝图路由
+    from app.routers.health import health_bp
+    from app.routers.chat import chat_bp
+    from app.routers.memory import memory_bp
+    
+    app.register_blueprint(health_bp)
+    app.register_blueprint(chat_bp)
+    app.register_blueprint(memory_bp)
     
     return app
 
-if __name__ == "__main__":
-    # 创建应用实例
-    app = create_app()
+def get_chat_service():
+    """获取聊天服务实例"""
+    return _chat_service
+
+def main(app=None):
+    """启动应用的主函数"""
+    if app is None:
+        app = create_app()
     
     # 启动服务
-    print(f"Ollama聊天服务已启动，端口 {Config.FLASK_PORT}")
+    print(f"聊天服务已启动，端口 {Config.FLASK_PORT}")
     print("支持的接口:")
     print("  - POST /chat: 简单聊天接口")
-    print("  - POST /mcp/chat: MCP协议兼容的聊天接口")
     print("  - GET /health: 健康检查")
-    print(f"  - 使用模型: {Config.OLLAMA_MODEL}")
+    print(f"  - 使用模型: {Config.SILICONFLOW_MODEL}")
     print("  - 情感状态机已集成")
     print("  - 用户机制已集成，支持独立记忆")
     
     # 使用waitress启动服务器
     serve(app, host=Config.FLASK_HOST, port=Config.FLASK_PORT)
+
+if __name__ == "__main__":
+    # 创建应用实例
+    app = create_app()
+    main(app)

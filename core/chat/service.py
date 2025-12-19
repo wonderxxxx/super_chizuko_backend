@@ -1,16 +1,14 @@
-import json
-
 from flask import request, jsonify
 import traceback
 import threading
-from config import Config
+from config.settings import Config
 from database import (
     get_db, get_or_create_user, get_or_create_memory_collection,
     create_verification_code, verify_email_code, check_user_verified,
     get_user_by_email
 )
-from memory_manager import MemoryManager
-from emotion_state_serv.emo_serv import EmotionalStateMachine
+from core.memory.manager import MemoryManager
+from emo_serv import EmotionalStateMachine
 from email_service import email_service
 
 class ChatService:
@@ -23,66 +21,10 @@ class ChatService:
         self.prompt_generator = prompt_generator
         self.chroma_client = chroma_client
     
+    # 路由注册已移至app/routers/目录下，不再需要此方法
     def register_routes(self, app):
-        """注册路由"""
-        # 直接在应用上注册路由，不使用蓝图
-        @app.route("/chat", methods=["POST"])
-        def chat():
-            """
-            处理聊天请求
-            """
-            return self._handle_chat_request()
-        
-
-        
-        @app.route("/health", methods=["GET"])
-        def health_check():
-            """
-            健康检查接口
-            """
-            return self._health_check()
-        
-        @app.route("/memory/clear", methods=["POST"])
-        def clear_memory():
-            """
-            清空特定用户的所有记忆
-            """
-            return self._handle_clear_memory_request()
-        
-        @app.route("/chat/initial", methods=["POST"])
-        def initial_message():
-            """
-            生成首次对话的开场白
-            """
-            return self._handle_initial_message_request()
-        
-        @app.route("/chat/history", methods=["GET"])
-        def get_chat_history():
-            """
-            获取特定用户的聊天记录
-            """
-            return self._handle_get_chat_history_request()
-        
-        @app.route("/chat/history/clear", methods=["POST"])
-        def clear_chat_history():
-            """
-            清空特定用户的所有聊天记录
-            """
-            return self._handle_clear_chat_history_request()
-        
-        @app.route("/auth/send-verification", methods=["POST"])
-        def send_verification():
-            """
-            发送邮箱验证码
-            """
-            return self._handle_send_verification_request()
-        
-        @app.route("/auth/verify", methods=["POST"])
-        def verify_email():
-            """
-            验证邮箱验证码
-            """
-            return self._handle_verify_email_request()
+        """注册路由（已过时，路由已移至app/routers/目录）"""
+        pass
     
     def _handle_user_identity(self, data):
         """处理用户身份，获取或创建用户及其记忆集合"""
@@ -162,7 +104,7 @@ class ChatService:
                 include_thinking = bool(data.get("include_thinking", False))
                 
                 # 一次调用获取响应和思考过程，避免两次API请求
-                ollama_result = self.ai_manager.get_ollama_response(prompt, think=include_thinking)
+                ollama_result = self.ai_manager.get_ai_response(prompt, think=include_thinking)
                 final_text = ollama_result["response"]
                 thinking_text = ollama_result["thinking"] if include_thinking else None
                 
@@ -221,7 +163,6 @@ class ChatService:
             print(f"聊天服务错误: {e}")
             print(traceback.format_exc())
             return jsonify({"error": f"服务器内部错误: {str(e)}"}), 500
-
     
     def _handle_initial_message_request(self):
         try:
@@ -249,9 +190,10 @@ class ChatService:
                     return jsonify({"status": "skipped", "message": "已有历史记忆，不再生成开场白"})
                 state = emotional_machine.current_state
                 prompt = self.prompt_generator.generate_initial_prompt(state)
-                result = self.ai_manager.get_ollama_response(prompt)
-                final_text = result["response"]
-                self.memory_manager.add_memory("[INIT]", final_text, state, memory_type="conversation", category="system")
+                # 使用统一的AI响应方法，直接返回字符串
+                result = self.ai_manager.get_ai_response(prompt)
+                initial_text = result
+                self.memory_manager.add_memory("[INIT]", initial_text, state, memory_type="conversation", category="system")
             finally:
                 # 恢复原始记忆集合
                 if original_collection:
@@ -308,7 +250,7 @@ class ChatService:
                     next(db_gen, None)
                 state = emotional_machine.current_state
                 prompt = self.prompt_generator.generate_initial_prompt(state)
-                result = self.ai_manager.get_ollama_response(prompt)
+                result = self.ai_manager.get_ai_response(prompt)
                 initial_text = result["response"]
                 self.memory_manager.add_memory("[INIT]", initial_text, state, memory_type="conversation", category="system")
             finally:
