@@ -1,8 +1,8 @@
 # 数据库文件
-data.db
+database/data.db
 
 # 向量数据库目录
-/chroma_db
+/database/chroma_db
 
 # 模型文件目录（通常包含大文件）
 /models

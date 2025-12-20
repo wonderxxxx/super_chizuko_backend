@@ -7,18 +7,14 @@ os.environ['DISABLE_POSTHOG'] = 'true'
 os.environ['DO_NOT_TRACK'] = '1'
 
 # 添加情感状态机工具箱到Python路径
-sys.path.append(os.path.join(os.path.dirname(__file__), 'emotion_state_serv'))
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'emotion_state_serv'))
 
 class Config:
     """配置类"""
-    # Ollama模型配置
-    OLLAMA_MODEL = "deepseek-r1:8b"
-    OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
-    
     # 硅基流动API配置
     SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "")  # 环境变量获取API密钥
     SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1/chat/completions"
-    SILICONFLOW_MODEL = "Qwen/QwQ-32B"  # 默认使用Qwen/QwQ-32B模型
+    SILICONFLOW_MODEL = "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B"  # 默认使用deepseek-r1:8b模型
     SILICONFLOW_MAX_TOKENS = 4096
     SILICONFLOW_TEMPERATURE = 0.7
     SILICONFLOW_TOP_P = 0.7
@@ -84,7 +80,7 @@ class Config:
     SECRET_KEY = os.urandom(24)  # 用于会话管理
     
     # 模型配置
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     MODELSCOPE_MODEL_ID = "Xorbits/bge-small-zh-v1.5"
     LOCAL_MODEL_PATH = os.path.join(BASE_DIR, 'models', 'bge-small-zh-v1.5', 'ai-modelscope', 'bge-small-zh-v1___5')
     FALLBACK_MODEL = None
@@ -94,11 +90,11 @@ class Config:
     CHARACTER_CARD_MODULE = "character_card"
     
     # 数据库配置
-    DB_PATH = os.path.join(BASE_DIR, 'data.db')  # SQLite数据库路径
+    DB_PATH = os.path.join(BASE_DIR+'/database/', 'data.db')  # SQLite数据库路径
     DATABASE_URL = f'sqlite:///{DB_PATH}'
     
     # Chroma配置
-    CHROMA_PERSIST_DIRECTORY = os.path.join(BASE_DIR, 'chroma_db')  # Chroma持久化目录
+    CHROMA_PERSIST_DIRECTORY = os.path.join(BASE_DIR+'/database/', 'chroma_db')  # Chroma持久化目录
     
     # Redis配置（可选）
     REDIS_URL = None  # 如果使用Redis，设置为redis://localhost:6379/0

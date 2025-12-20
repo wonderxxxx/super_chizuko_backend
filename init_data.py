@@ -9,7 +9,7 @@ import sys
 import traceback
 import chromadb
 from sentence_transformers import SentenceTransformer
-from config import Config
+from config.settings import Config
 from database import init_db, get_db, get_or_create_user, get_or_create_memory_collection
 
 def init_database():
